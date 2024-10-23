@@ -1,22 +1,46 @@
 #!/usr/bin/env python3
-""" Implementing an expiring web cache and tracker
-    obtain the HTML content of a particular URL and returns it """
+"""
+Implements an expiring web cache and tracker.
+
+- The code defines a decorator that counts how many times a URL is accessed.
+- It uses Redis as a cache to store and retrieve web pages.
+- The cached values expire after a certain time period.
+- The `get_page` function fetches a web page and caches its value using the decorator.
+"""
+
+from typing import Callable
+from functools import wraps
 import redis
 import requests
-r = redis.Redis()
-count = 0
+
+redis_client = redis.Redis()
 
 
+def url_count(method: Callable) -> Callable:
+    """Decorator that counts how many times a URL is accessed"""
+    @wraps(method)
+    def wrapper(*args, **kwargs):
+        url = args[0]
+        redis_client.incr(f"count:{url}")  # Increment the count for the URL
+        cached = redis_client.get(f'{url}')  # Check if the URL is already cached
+        if cached:
+            return cached.decode('utf-8')  # Return the cached value
+
+        # Cache the value for the URL and set an expiration time of 10 seconds
+        redis_client.setex(f'{url}', 10, method(url))
+
+        return method(*args, **kwargs)  # Call the original method
+
+    return wrapper
+
+
+@url_count
 def get_page(url: str) -> str:
-    """ track how many times a particular URL was accessed in the key
-        "count:{url}"
-        and cache the result with an expiration time of 10 seconds """
-    r.set(f"cached:{url}", count)
-    resp = requests.get(url)
-    r.incr(f"count:{url}")
-    r.setex(f"cached:{url}", 10, r.get(f"cached:{url}"))
-    return resp.text
+    """Fetch a web page and cache its value"""
+    response = requests.get(url)
+    return response.text
 
 
 if __name__ == "__main__":
     get_page('http://slowwly.robertomurray.co.uk')
+
