@@ -1,57 +1,22 @@
 #!/usr/bin/env python3
-"""
-Module with tools for request caching and tracking using Redis.
-"""
-
+""" Implementing an expiring web cache and tracker
+    obtain the HTML content of a particular URL and returns it """
 import redis
 import requests
-from functools import wraps
-from typing import Callable
-
-# Initialize a Redis instance for caching and tracking
-redis_store = redis.Redis()
+r = redis.Redis()
+count = 0
 
 
-def data_cacher(method: Callable) -> Callable:
-    """Decorator to cache the output of a function and track request count.
-
-    Args:
-        method (Callable): The function whose output is to be cached.
-
-    Returns:
-        Callable: The wrapped function with caching and tracking.
-    """
-    @wraps(method)
-    def invoker(url) -> str:
-        """
-        Caches the result of the URL fetch and tracks the request count.
-
-        Args:
-            url (str): The URL to fetch data from.
-
-        Returns:
-            str: The content of the URL, either from cache or fetched anew.
-        """
-        redis_store.incr(f'count:{url}')
-        result = redis_store.get(f'result:{url}')
-        if result:
-            return result.decode('utf-8')
-        result = method(url)
-        redis_store.set(f'count:{url}', 0)
-        redis_store.setex(f'result:{url}', 10, result)
-        return result
-    return invoker
-
-
-@data_cacher
 def get_page(url: str) -> str:
-    """
-    Fetches and returns the content of a URL, with caching.
+    """ track how many times a particular URL was accessed in the key
+        "count:{url}"
+        and cache the result with an expiration time of 10 seconds """
+    r.set(f"cached:{url}", count)
+    resp = requests.get(url)
+    r.incr(f"count:{url}")
+    r.setex(f"cached:{url}", 10, r.get(f"cached:{url}"))
+    return resp.text
 
-    Args:
-        url (str): The URL to fetch data from.
 
-    Returns:
-        str: The content of the URL.
-    """
-    return requests.get(url).text
+if __name__ == "__main__":
+    get_page('http://slowwly.robertomurray.co.uk')
